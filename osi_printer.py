@@ -699,9 +699,6 @@ def label_type_callback(label_type):
             entrada_4ta_linea.configure(placeholder_text="4ta Línea", state=ctk.NORMAL)
             entrada_5ta_linea.configure(placeholder_text="5ta Línea", state=ctk.NORMAL)
 
-        case "Excel":
-            print("")
-
     # Saco el foco de los campos de entrada
     app.focus_set()
 

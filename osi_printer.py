@@ -3,7 +3,8 @@
     Está configurada para la Nippon NP-3511D y NP-3511D-2 con etiquetas de
     70 o 74 mm de ancho x 40 mm, 49 mm o 50 mm de alto con 3, 4 o 5 mm entre etiquetas.
     Autor: Fernando Agostino
-    Fecha: 28/11/2023
+    Modificacion: Chazarreta Matias
+    Fecha: 14/12/2024
 """
 
 import logging
@@ -11,8 +12,10 @@ from datetime import datetime
 from win32 import win32print
 from escpos.printer import Dummy
 import customtkinter as ctk
+from customtkinter import filedialog
+import pandas as pd
 
-VERSION = "V1.7"
+VERSION = "V.C01"
 
 # Poner False en condiciones normales o True si se quieren imprimir los mensajes para debug
 DEBUG = False
@@ -479,6 +482,7 @@ def button_print_callback():
             head_pos += p.feed_forward_mm(alto_etiqueta + gap - head_pos + CUTTER_OFFSET)
 
             logging.debug("Posicion Cabezal luego del corte = %f", head_pos)
+        
 
     # Corto la etiqueta
     p.full_cut()
@@ -534,6 +538,119 @@ def button_backward_callback():
     p.close()
     p = None
 
+def print_excel():
+    filepath = filedialog.askopenfile()
+    df = pd.read_excel(filepath.name)
+    """ Realiza la impresión de la etiqueta seleccionada """
+
+    # Creo una impresora de tickets Dummy para generar los comandos que luego envío a la impresora real
+    p = Np3511d()
+
+    # Reseteo la configuración de la impresora
+    p.reset()
+
+    # Establezco el paso del line feed al mínimo
+    p.set_lf_pitch(0)
+
+    # Seteo Font A en doble alto y doble ancho
+    p.set_double_width_and_height()
+
+    # Seteo la alineación a la izquierda
+    p.set_alignment("LEFT")
+
+    # Pruebo algunos seteos para mejorar la calidad de impresión
+    # Limito la velocidad de impresión
+    p.set_max_print_speed(75)
+    # Subo la densidad de impresión
+    p.set_print_density(130)
+    # Subo la calidad de impresión
+    p.set_enhanced_print_on()
+    # Seteo impresión de doble pasada
+    p.set_double_strike_on()
+
+    # Seteo el margen izquierdo en 6 mm y el ancho de impresión en 66 mm
+    p.set_margins(6, 66)
+
+    # Leo el tamaño de etiqueta elegida
+    alto_etiqueta = int(optionmenu_label_size.get())
+
+    nro_lineas = 5
+    nro_bloques = 3
+
+    # Leo separación entre etiquetas elegida
+    gap = int(optionmenu_gap_size.get())
+
+    # Retrocedo desde la línea de corte para posicionar el cabezal en la primera línea de la siguiente etiqueta
+    p.feed_backward_mm(CUTTER_OFFSET - gap/2 - MARGIN + POST_CUT_ADV)
+
+    # Reseteo el registro de la posición del cabezal de impresión en la etiqueta
+    # contando en mm desde el punto medio de la separación entre etiquetas
+    head_pos = MARGIN + gap/2
+    i=0
+    for value in df.values:
+        i+=1
+        
+        separacion = int(((alto_etiqueta - 2 * MARGIN - 6 * nro_lineas) / (nro_bloques - 1)) * 8) / 8
+        nro_osi = str(value[0])
+        nro_claim = str(value[1])
+        nro_fru = str(value[2])
+        if i % 5 == 0:
+            button_forward_callback()
+
+        # Obtengo la fecha de hoy en formato texto
+        hoy = datetime.now().strftime("%d/%m/%Y")
+
+        # Imprimo la fecha de hoy
+        p.text("           " + hoy + "\n")
+        # Ajusto el registro de la posición del cabezal en mm
+        head_pos += 6
+
+        # Dejo espacio entre bloques y ajusto el registro de la posición del cabezal en mm
+        head_pos += p.feed_forward_mm(separacion)
+
+        # Imprimo el Nro de FRU
+        p.text(" FRU:   " + nro_fru + "\n")
+        # Ajusto el registro de la posición del cabezal en mm
+        head_pos += 6
+
+        # Imprimo el Nro de Claim
+        p.text(" CLAIM: " + nro_claim + "\n")
+        # Ajusto el registro de la posición del cabezal en mm
+        head_pos += 6
+
+        # Dejo espacio entre bloques y ajusto el registro de la posición del cabezal en mm
+        head_pos += p.feed_forward_mm(separacion)
+
+        # Imprimo el Nro de OSI
+        p.text(" OSI:   " + nro_osi + "\n")
+        # Ajusto el registro de la posición del cabezal en mm
+        head_pos += 6
+
+        # Imprimo el código de barras de 6 mm sin texto y con los caracteres de START y END en CODE39
+        p.barcode("*" + nro_osi + "*", "CODE39", width=4, height=48, pos="OFF", align_ct=False)
+        # Ajusto el registro de la posición del cabezal en mm
+        head_pos += 6
+
+        logging.debug("Separacion entre bloques = %f", separacion)
+        logging.debug("Posicion Cabezal antes del corte = %f", head_pos)
+
+        # Avanzo el papel hasta el punto de corte, dependiendo del alto de etiqueta y su separación
+        head_pos += p.feed_forward_mm(alto_etiqueta + gap - head_pos + CUTTER_OFFSET)
+
+        logging.debug("Posicion Cabezal luego del corte = %f", head_pos)
+
+        # Corto la etiqueta
+        p.full_cut()
+
+        # Imprimo el buffer de impresión en la impresora de etiquetas
+        print_buffer(p.output)
+
+    # Cierro la impresora dummy
+    p.clear()
+    p.close()
+    p = None
+
+
 
 def limpiar_entradas():
     """ Borra todos los campos de entrada """
@@ -582,6 +699,9 @@ def label_type_callback(label_type):
             entrada_4ta_linea.configure(placeholder_text="4ta Línea", state=ctk.NORMAL)
             entrada_5ta_linea.configure(placeholder_text="5ta Línea", state=ctk.NORMAL)
 
+        case "Excel":
+            print("")
+
     # Saco el foco de los campos de entrada
     app.focus_set()
 
@@ -603,22 +723,22 @@ def label_type_callback(label_type):
 DEFAULT_PRINTER = "NPI Integration Driver"
 
 # Armo la lista de tipos de etiquetas disponibles
-label_type_list = ["Ingreso Equipo", "Ingreso Golden Unit", "Salida Parte", "Libre"]
+label_type_list = ["Salida Parte","Ingreso Equipo", "Ingreso Golden Unit", "Libre", "Excel"]
 DEFAULT_LABEL_TYPE = label_type_list[0]
 
 # Armo la lista de tamaños de etiquetas disponibles (altura en mm)
-label_size_list = ["40", "49", "50"]
-DEFAULT_LABEL_SIZE = label_size_list[1]
+label_size_list = ["50","40", "49"]
+DEFAULT_LABEL_SIZE = label_size_list[0]
 
 # Armo la lista de separación entre etiquetas disponibles (espacio en mm)
-gap_size_list = ["6", "4", "5"]
+gap_size_list = [ "5","6", "4"]
 DEFAULT_GAP_SIZE = gap_size_list[0]
 
 # Configura la ventana principal
 ctk.set_appearance_mode("dark")  # Modes: "System" (standard), "Dark", "Light"
 ctk.set_default_color_theme("blue")  # Themes: "blue" (standard), "green", "dark-blue"
 app = ctk.CTk()
-app.geometry("290x590")
+app.geometry("290x630")
 app.title("OSI Label Printer " + VERSION)
 
 # Ingreso de Nro de OSI
@@ -682,6 +802,11 @@ boton_avanzar.pack(pady=5)
 # Botón para retroceder el papel
 boton_retroceder = ctk.CTkButton(master=app, text="RETROCEDER", command=button_backward_callback)
 boton_retroceder.pack(pady=5)
+
+# Boton para abrir el excel
+
+boton_excel = ctk.CTkButton(master=app,text="EXCEL",command=print_excel)
+boton_excel.pack(pady=5)
 
 # Seteo los campos de entrada para el tipo de etiqueta por defecto
 label_type_callback(DEFAULT_LABEL_TYPE)
